@@ -134,9 +134,9 @@ class ConsumerNested implements Runnable {
 }
 
 public class ProducerConsumerNested {
-    static int n = 2;
+    static int n = 10;
     static int maxBound = 1000;
-    static int extraWork = 2;
+    static int extraWork = 20000;
     static int[] counts;
 
 

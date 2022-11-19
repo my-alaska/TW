@@ -196,14 +196,10 @@ class Consumer implements Runnable{
     }
 }
 
-
-
-
 public class ProducerConsumer{
-    static int n = 2;
+    static int n = 10;
     static int maxBound = 1000;
-    static int extraWork = 10;
-    static int extraFactory = 2;
+    static int extraWork = 20000;
     static int[] counts;
 
     public static void main(String[] args) throws InterruptedException {
@@ -241,9 +237,5 @@ public class ProducerConsumer{
             System.out.println("\n");
             epoch++;
         }
-
-
-
-
     }
 }
