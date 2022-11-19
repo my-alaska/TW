@@ -1,8 +1,6 @@
 import java.util.LinkedList;
 import java.util.List;
 
-
-
 public class Problem {
 
     static int val;
@@ -17,22 +15,12 @@ public class Problem {
         List<MyThread> threadList = new LinkedList<>();
 
         for(int i = 0; i < n; i++){
-
             threadList.add(new MyThread(1,iterations));
             threadList.add(new MyThread(-1,iterations));
-//
         }
 
-        for(Thread thread2: threadList){
-            thread2.start();
-        }
-
-
-        for(Thread thread3: threadList){
-            thread3.join();
-        }
-
-
+        for(Thread thread2: threadList) thread2.start();
+        for(Thread thread3: threadList) thread3.join();
 
         System.out.println(val);
     }
@@ -44,13 +32,10 @@ class MyThread extends Thread{
 
     MyThread(int delta,  int iterations){
         this.delta = delta;
-
         this.iterations = iterations;
     }
 
     public void run() {
-        for (int i = 0; i < iterations; i++) {
-            Problem.val += delta;
-        }
+        for (int i = 0; i < iterations; i++) Problem.val += delta;
     }
 }
