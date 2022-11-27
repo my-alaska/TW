@@ -4,8 +4,8 @@ This exercise implements 2 ways of tackling the Producer-Consumer problem
 One (as in previous laboratory exercises) uses Java's locks and conditions
 whereas the other one uses the 'active object' pattern used in asynchronous programming
 
-Both programs in this repository print out every 10 seconds how many complete tasks(producer's or consumer's requests)
-get completed on average in one second. The program measures the real world time as well as CPU time
+Both programs in this repository print out how many complete tasks(producer's or consumer's requests) and how much extra work
+get completed on average in one second after calculating it for 10 seconds.
 
 To test the behaviour of both methods we can compare their performance with different "extra work" and "n" parameters
 

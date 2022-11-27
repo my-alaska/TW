@@ -1,11 +1,9 @@
-import java.lang.management.ManagementFactory;
-import java.lang.management.ThreadMXBean;
 import java.util.LinkedList;
-import java.util.List;
-import java.util.Queue;
-import java.util.Random;
-import java.util.concurrent.LinkedBlockingQueue;
-import java.util.concurrent.TimeUnit;
+        import java.util.List;
+        import java.util.Queue;
+        import java.util.Random;
+        import java.util.concurrent.LinkedBlockingQueue;
+        import java.util.concurrent.TimeUnit;
 
 enum Type{
     PRODUCER, CONSUMER, FACTORY
@@ -56,11 +54,14 @@ class Factory implements Runnable{
     LinkedBlockingQueue<Pack> proxy;
     Queue<Pack> internalQueue = new LinkedList<>();
     Warehouse warehouse;
-    Factory(int c, LinkedBlockingQueue<Pack> proxy, Warehouse warehouse){
+    boolean exit = false;
+    int factoryWork;
+    Factory(int c, LinkedBlockingQueue<Pack> proxy, Warehouse warehouse, int factoryWork){
         n = 0;
         capacity = c;
         this.proxy = proxy;
         this.warehouse = warehouse;
+        this.factoryWork = factoryWork;
     }
 
 
@@ -72,7 +73,7 @@ class Factory implements Runnable{
     }
 
 
-
+    double val;
     private void process(Pack pack){
         if(pack.type == Type.PRODUCER){
             n += pack.val;
@@ -82,10 +83,9 @@ class Factory implements Runnable{
         }
         pack.type = Type.FACTORY;
         warehouse.setPack(pack);
-//        warehouse.packs[pack.id] = pack;
         warehouse.setFlag(pack.id);
-//        warehouse.flags[pack.id] = true;
-//        warehouse.setFlag(pack.id);
+        for(int j = 0; j < factoryWork; j++) val = Math.sin(42);
+
     }
 
 
@@ -94,13 +94,12 @@ class Factory implements Runnable{
     public void run() {
         Pack pack;
 
-        while(true){
+        while(!exit){
 
             while(!internalQueue.isEmpty()){
                 pack = internalQueue.peek();
                 if(fits(pack)){
                     internalQueue.remove();
-                    // extra work parameter(task time)
                     process(pack);
                 }else break;
             }
@@ -109,11 +108,13 @@ class Factory implements Runnable{
                 pack = proxy.remove();
                 if(fits(pack)){
                     process(pack);
-                    // extra work parameter(task time)
                     break;
                 }else internalQueue.add(pack);
             }
         }
+    }
+    public void stop() {
+        exit = true;
     }
 }
 
@@ -125,10 +126,11 @@ class Producer implements Runnable{
     int max;
     int id;
     int extraWork;
+    boolean exit = false;
     LinkedBlockingQueue<Pack> proxy;
     Warehouse warehouse;
     public Producer(int max, int id, LinkedBlockingQueue<Pack> proxy, Warehouse warehouse, int extraWork){
-        this.random = new Random();
+        this.random = new Random(42);
         this.max = max;
         this.id = id;
         this.proxy = proxy;
@@ -136,23 +138,32 @@ class Producer implements Runnable{
         this.extraWork = extraWork;
     }
 
+    long counter;
     @Override
     public void run() {
         int i;
-//        Pack pack;
         double val;
-        while(true){
+        while(!exit){
             i = random.nextInt(max)+1;
 
             try {
                 proxy.put(new Pack(i,this.id,Type.PRODUCER));
             } catch (InterruptedException e) {throw new RuntimeException(e);}
 
-            for(int j = 0; j < extraWork; j++) val = Math.sin(42);
-            while(! warehouse.checkFlag(id)) val = Math.sin(42);
-            ProducerConsumer.counts[id]++;
-//            pack = warehouse.packs[id];
+            for(int j = 0; j < extraWork; j++) {
+                val = Math.sin(42);
+            }
+            counter = 0;
+            while(! warehouse.checkFlag(id)) {
+                val = Math.sin(42);
+              counter++;
+            }
+            ProducerConsumer.workCounts[id]+=(extraWork+counter);
+            ProducerConsumer.requestCounts[id]++;
         }
+    }
+    public void stop() {
+        exit = true;
     }
 }
 
@@ -164,78 +175,102 @@ class Consumer implements Runnable{
     int max;
     int id;
     int extraWork;
+    boolean exit = false;
     LinkedBlockingQueue<Pack> proxy;
     Warehouse warehouse;
     public Consumer(int max, int id, LinkedBlockingQueue<Pack> proxy, Warehouse warehouse, int extraWork){
-        this.random = new Random();
+        this.random = new Random(42);
         this.max = max;
         this.id = id;
         this.proxy = proxy;
         this.warehouse = warehouse;
         this.extraWork = extraWork;
     }
+    long counter;
     @Override
     public void run() {
         int i;
-//        Pack pack;
         double val;
-        while(true){
+        while(!exit){
             i = random.nextInt(max)+1;
 
             try {
                 proxy.put(new Pack(i,this.id,Type.CONSUMER));
             } catch (InterruptedException e) {
-                throw new RuntimeException(e);
+
             }
 
-            for(int j = 0; j < extraWork; j++) val = Math.sin(42);
-            while(! warehouse.checkFlag(id)) val = Math.sin(42);
-            ProducerConsumer.counts[id]++;
-//            pack = warehouse.packs[id];
+            for(int j = 0; j < extraWork; j++) {
+                val = Math.sin(42);
+            }
+            counter = 0;
+            while(! warehouse.checkFlag(id)) {
+                val = Math.sin(42);
+//                counter++;
+            }
+            ProducerConsumer.workCounts[id]+=(extraWork+counter);
+            ProducerConsumer.requestCounts[id]++;
         }
+    }
+    public void stop() {
+        exit = true;
     }
 }
 
 public class ProducerConsumer{
-    static int n = 10;
     static int maxBound = 1000;
-    static int extraWork = 20000;
-    static int[] counts;
+    static int[] requestCounts;
+    static long[] workCounts;
 
-    public static void main(String[] args) throws InterruptedException {
+
+    static void test(int extraWork, int factoryWork, int n) throws InterruptedException {
+
         LinkedBlockingQueue<Pack> proxy = new LinkedBlockingQueue<>();
         Warehouse warehouse = new Warehouse(n);
 
-        Thread factory = new Thread(new Factory(2*maxBound-1, proxy, warehouse));
+        Thread factory = new Thread(new Factory(2*maxBound-1, proxy, warehouse,factoryWork));
 
-        counts = new int[2*n];
-        for(int i = 0; i < 2*n; i++)counts[i] = 0;
+        requestCounts = new int[2*n];
+        workCounts = new long[2*n];
+        for(int i = 0; i < 2*n; i++) {
+            requestCounts[i] = 0;
+            workCounts[i] = 0;
+        }
 
         List<Thread> threadList = new LinkedList<>();
         for(int i = 0; i < n; i++) threadList.add(new Thread(new Consumer(maxBound,i,proxy,warehouse,extraWork)));
         for(int i = 0; i < n; i++) threadList.add(new Thread(new Producer(maxBound,n+i,proxy,warehouse,extraWork)));
 
 
-        int epoch = 1;
         long start = System.nanoTime();
-        long nano;
+
 
         factory.start();
         for (Thread thread : threadList) thread.start();
-        ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
-        long[] allThreadIds = threadMXBean.getAllThreadIds();
-        int numberOfOperations;
-        while (true) {
-            TimeUnit.SECONDS.sleep(10);
-            System.out.println("epoch " + epoch);
-            numberOfOperations = 0;
-            for(int i = 0; i < 2*n;i++)numberOfOperations += counts[i];
-            System.out.println("n operations/real time second \n" + numberOfOperations/((double)(System.nanoTime() - start)/1_000_000_000));
-            nano = 0;
-            for (long id : allThreadIds) nano += threadMXBean.getThreadCpuTime(id);
-            System.out.println("n operations/cpu time second \n" + numberOfOperations/((double) nano / 1000_000_000));
-            System.out.println("\n");
-            epoch++;
+
+
+        TimeUnit.SECONDS.sleep(10);
+        for (Thread thread : threadList) thread.stop();
+        factory.stop();
+        double end = (System.nanoTime() - start);
+
+        int numberOfOperations = 0;
+        long finishedWork = 0;
+        for(int i = 0; i < 2*n;i++) {
+            numberOfOperations += requestCounts[i];
+            finishedWork += workCounts[i];
         }
+
+
+        System.out.println("n operations /real time second per thread \n" + (numberOfOperations/(2*n))/(end/1_000_000_000));
+        System.out.println("work         /real time second per thread \n" + (finishedWork/(2*n))/(end/1_000_000_000));
+        System.out.println("\n");
     }
+
+
+    public static void main(String[] args) throws InterruptedException {
+        test(200, 200,4);
+    }
+
+
 }

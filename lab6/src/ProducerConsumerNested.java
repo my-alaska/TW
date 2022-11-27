@@ -1,5 +1,3 @@
-import java.lang.management.ManagementFactory;
-import java.lang.management.ThreadMXBean;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Random;
@@ -10,6 +8,8 @@ import java.util.concurrent.locks.ReentrantLock;
 class WarehouseNested {
     int n;
     int c;
+    double val;
+    int factoryWork;
 
 
     private ReentrantLock globalLock = new ReentrantLock();
@@ -17,9 +17,10 @@ class WarehouseNested {
     private ReentrantLock producerLock = new ReentrantLock();
     private ReentrantLock consumerLock = new ReentrantLock();
 
-    WarehouseNested(int capacity) {
+    WarehouseNested(int capacity, int factoryWork) {
         n = 0;
         c = capacity;
+        this.factoryWork = factoryWork;
     }
 
     void put(int i) throws InterruptedException {
@@ -32,6 +33,7 @@ class WarehouseNested {
                     globalCondition.await();
                 }
                 n += i;
+                for(int j = 0; j < factoryWork; j++) val = Math.sin(42);
                 globalCondition.signal();
             } finally {
                 globalLock.unlock();
@@ -52,6 +54,7 @@ class WarehouseNested {
                     globalCondition.await();
                 }
                 n -= i;
+                for(int j = 0; j < factoryWork; j++) val = Math.sin(42);
                 globalCondition.signal();
             } finally {
                 globalLock.unlock();
@@ -71,10 +74,11 @@ class ProducerNested implements Runnable {
     int max;
     int id;
     int extraWork;
+    boolean exit = false;
 
-    public ProducerNested(WarehouseNested w, int max, int id, int seed, int extraWork) {
+    public ProducerNested(WarehouseNested w, int max, int id, int extraWork) {
         this.warehouse = w;
-        this.random = new Random(seed);
+        this.random = new Random(42);
         this.max = max;
         this.id = id;
         this.extraWork = extraWork;
@@ -83,7 +87,7 @@ class ProducerNested implements Runnable {
     @Override
     public void run() {
         double val;
-        while (true) {
+        while (!exit) {
             try {
                 warehouse.put(random.nextInt(max) + 1);
             } catch (InterruptedException e) {
@@ -92,8 +96,12 @@ class ProducerNested implements Runnable {
             for(int i = 0; i < extraWork;i++){
                 val = Math.sin(42);
             }
-            ProducerConsumerNested.counts[id]++;
+            ProducerConsumerNested.workCounts[id]+=extraWork;
+            ProducerConsumerNested.requestCounts[id]++;
         }
+    }
+    public void stop() {
+        exit = true;
     }
 }
 
@@ -106,10 +114,11 @@ class ConsumerNested implements Runnable {
     int max;
     int id;
     int extraWork;
+    boolean exit = false;
 
-    public ConsumerNested(WarehouseNested w, int max, int id, int seed,int extraWork) {
+    public ConsumerNested(WarehouseNested w, int max, int id, int extraWork) {
         this.warehouse = w;
-        this.random = new Random(seed);
+        this.random = new Random(42);
         this.max = max;
         this.id = id;
         this.extraWork = extraWork;
@@ -119,7 +128,7 @@ class ConsumerNested implements Runnable {
     @Override
     public void run() {
         double val;
-        while (true) {
+        while (!exit) {
             try {
                 warehouse.take(random.nextInt(max) + 1);
             } catch (InterruptedException e) {
@@ -128,48 +137,67 @@ class ConsumerNested implements Runnable {
             for(int i = 0; i < extraWork;i++){
                 val = Math.sin(42);
             }
-            ProducerConsumerNested.counts[id]++;
+            ProducerConsumerNested.workCounts[id]+=extraWork;
+            ProducerConsumerNested.requestCounts[id]++;
         }
+    }
+
+    public void stop() {
+        exit = true;
     }
 }
 
 public class ProducerConsumerNested {
-    static int n = 10;
     static int maxBound = 1000;
-    static int extraWork = 20000;
-    static int[] counts;
+    static int[] requestCounts;
+    static long[] workCounts;
+
+
+    static void test(int extraWork, int factoryWork, int n) throws InterruptedException {
+
+        WarehouseNested warehouse = new WarehouseNested(n,factoryWork);
+
+
+
+        requestCounts = new int[2*n];
+        workCounts = new long[2*n];
+        for(int i = 0; i < 2*n; i++) {
+            requestCounts[i] = 0;
+            workCounts[i] = 0;
+        }
+
+        List<Thread> threadList = new LinkedList<>();
+        for (int i = 0; i < n; i++) threadList.add(new Thread(new ConsumerNested(warehouse, maxBound, i, extraWork)));
+        for (int i = 0; i < n; i++) threadList.add(new Thread(new ProducerNested(warehouse, maxBound, n + i,extraWork)));
+
+
+        long start = System.nanoTime();
+
+
+
+        for (Thread thread : threadList) thread.start();
+
+
+        TimeUnit.SECONDS.sleep(10);
+        for (Thread thread : threadList) thread.stop();
+        double end = (System.nanoTime() - start);
+
+        int numberOfOperations = 0;
+        long finishedWork = 0;
+        for(int i = 0; i < 2*n;i++) {
+            numberOfOperations += requestCounts[i];
+            finishedWork += workCounts[i];
+        }
+
+
+        System.out.println("n operations /real time second per thread \n" + (numberOfOperations/(2*n))/(end/1_000_000_000));
+        System.out.println("work         /real time second per thread \n" + (finishedWork/(2*n))/(end/1_000_000_000));
+        System.out.println("\n");
+    }
 
 
     public static void main(String[] args) throws InterruptedException {
-        WarehouseNested warehouse = new WarehouseNested(maxBound * 2 - 1);
-
-        List<Thread> threadList = new LinkedList<>();
-
-        for (int i = 0; i < n; i++) threadList.add(new Thread(new ConsumerNested(warehouse, maxBound, i, 42, extraWork)));
-        for (int i = 0; i < n; i++) threadList.add(new Thread(new ProducerNested(warehouse, maxBound, n + i, 42,extraWork)));
-
-        int epoch = 1;
-        long start = System.nanoTime();
-        long nano;
-
-        counts = new int[2*n];
-        for(int i = 0; i < 2*n; i++)counts[i] = 0;
-
-        for (Thread thread : threadList) thread.start();
-        ThreadMXBean threadMXBean = ManagementFactory.getThreadMXBean();
-        long[] allThreadIds = threadMXBean.getAllThreadIds();
-        int numberOfOperations;
-        while (true) {
-            TimeUnit.SECONDS.sleep(10);
-            System.out.println("epoch " + epoch);
-            numberOfOperations = 0;
-            for(int i = 0; i < 2*n;i++)numberOfOperations += counts[i];
-            System.out.println("n operations/real time second \n" + numberOfOperations/((double)(System.nanoTime() - start)/1_000_000_000));
-            nano = 0;
-            for (long id : allThreadIds) nano += threadMXBean.getThreadCpuTime(id);
-            System.out.println("n operations/cpu time second \n" + numberOfOperations/((double) nano / 1000_000_000));
-            System.out.println("\n");
-            epoch++;
-        }
+        test(200,200,4);
     }
+
 }
