@@ -221,6 +221,9 @@ public class ProducerConsumer{
     static int maxBound = 1000;
     static int[] requestCounts;
     static long[] workCounts;
+    static double[] requestTimes = new double[18];
+    static double[] workTimes = new double[18];
+    static int i = 0;
 
 
     static void test(int extraWork, int factoryWork, int n) throws InterruptedException {
@@ -252,6 +255,8 @@ public class ProducerConsumer{
         TimeUnit.SECONDS.sleep(10);
         for (Thread thread : threadList) thread.stop();
         factory.stop();
+        for(Thread thread: threadList) thread.join();
+        factory.join();
         double end = (System.nanoTime() - start);
 
         int numberOfOperations = 0;
@@ -262,14 +267,44 @@ public class ProducerConsumer{
         }
 
 
-        System.out.println("n operations /real time second per thread \n" + (numberOfOperations/(2*n))/(end/1_000_000_000));
-        System.out.println("work         /real time second per thread \n" + (finishedWork/(2*n))/(end/1_000_000_000));
-        System.out.println("\n");
+        requestTimes[i] = ((double)numberOfOperations/(2*n))/(end/1_000_000_000);
+        workTimes[i] = ((double)finishedWork/(2*n))/(end/1_000_000_000);
+        i++;
     }
 
 
     public static void main(String[] args) throws InterruptedException {
-        test(200, 200,4);
+
+        test(2,2,2);
+        test(2,20,2);
+        test(2,200,2);
+
+        test(20,2,2);
+        test(20,20,2);
+        test(20,200,2);
+
+        test(200,2,2);
+        test(200,20,2);
+        test(200,200,2);
+
+
+
+        test(2,2,20);
+        test(2,20,20);
+        test(2,200,20);
+
+        test(20,2,20);
+        test(20,20,20);
+        test(20,200,20);
+
+        test(200,2,20);
+        test(200,20,20);
+        test(200,200,20);
+
+
+        for(double v : requestTimes )System.out.println(v);
+        System.out.println();
+        for(double v : workTimes )System.out.println(v);
     }
 
 
