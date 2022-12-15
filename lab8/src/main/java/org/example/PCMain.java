@@ -1,18 +1,16 @@
 package org.example;
 
 import org.jcsp.lang.*;
-import org.jcsp.util.Buffer;
-import org.jcsp.util.ints.ChannelDataStoreInt;
 
 import java.util.ArrayList;
 
-class Producer implements CSProcess{
-    // List of buffer channels that producer uses to send to randomly chosen buffer
-    private Any2OneChannelInt[] channels;
 
-    // Constructor
+class Producer implements CSProcess{
+    private Any2OneChannelInt[] channels;
+    int completed;
     public Producer(Any2OneChannelInt[] producerChannels) {
         this.channels = producerChannels;
+        this.completed = 0;
     }
 
     public void run () {
@@ -22,22 +20,19 @@ class Producer implements CSProcess{
             // randomly chosen buffer to send to
             i = (int)(Math.random()*PCMain.bufferNumber);
             channels[i].out().write(1);
+            completed++;
         }
     }
 }
 
-
-
-
-
 class Consumer implements CSProcess {
-    // List of buffer channels that consumer uses to receive from randomly chosen buffer
     private Any2OneChannelInt[] channels;
-
-    // constructor
-   public Consumer(Any2OneChannelInt[] consumerChannels) {
+    int completed;
+    public Consumer(Any2OneChannelInt[] consumerChannels) {
         this.channels = consumerChannels;
+        this.completed = 0;
     }
+
 
     public void run () {
         boolean running = true;
@@ -46,33 +41,30 @@ class Consumer implements CSProcess {
             // randomly chosen buffer to receive from
             i = (int)(Math.random()*PCMain.bufferNumber);
             channels[i].out().write(-1);
+            completed++;
         }
     }
 }
 
 class PCBuffer implements CSProcess {
 
-    // Channels to send to other buffers
+    // Channels to send or receive to or from other buffers
     private ArrayList<One2OneChannelInt> linksSend;
-
-    // channels to receive from other buffers
     private ArrayList<One2OneChannelInt> linksReceive;
-
-    // channel in which the consumers send their "products"
+    int neighboursNumber;
+    // channel for producers and consumer
     private Any2OneChannelInt consumerChannel;
-
-    // channel in which consumers sne their requests
     private Any2OneChannelInt producerChannel;
+
+    private Guard[] guards;
+    private Alternative alt;
 
     // size of the buffer
     int bufferSize;
-
     // number of elements in thebuffer
     int bufferStatus;
-
     // elements sent by other buffers
     int otherBuffersContent;
-
     // buffer identifier
     int id;
 
@@ -82,6 +74,16 @@ class PCBuffer implements CSProcess {
         this.id = id;
         this.producerChannel = producerChannel;
         this.consumerChannel = consumerChannel;
+
+        this.neighboursNumber = linksReceive.size();
+        this.guards = new Guard[this.neighboursNumber+2];
+        for(int i = 0; i < this.neighboursNumber;i++) this.guards[i] = linksReceive.get(i).in();
+        this.guards[this.neighboursNumber] = producerChannel.in();
+        this.guards[this.neighboursNumber+1] = consumerChannel.in();
+
+
+        this.alt = new Alternative(guards);
+
         this.bufferSize = PCMain.bufferSize;
         this.bufferStatus = 0;
         this.linksSend = linksSend;
@@ -89,82 +91,64 @@ class PCBuffer implements CSProcess {
         this.otherBuffersContent = 0;
     }
 
-    // sending half of buffer contents distributed equally to other buffers
-    private void buffersSend(){
-        int v = (bufferStatus + otherBuffersContent);
-        int x = v / (2*linksSend.size());
-        for(One2OneChannelInt link : linksSend){
-            link.out().write(x);
-            v -= x;
-        }
-        if(v+bufferStatus <= bufferSize){
-            bufferStatus += v;
-            otherBuffersContent = 0;
-        }else{
-            otherBuffersContent = (v+bufferStatus)-bufferSize;
-            bufferStatus = bufferSize;
-        }
+    // sending half of buffer contents to a random neighbour
+    private void buffersSend(int ind){
+        int valSend = bufferStatus/2;
+        bufferStatus -= valSend;
+        linksSend.get(ind).out().write(valSend);
+
     }
 
-    // receiving buffer contents from other buffers
-    private void buffersReceive(){
-        int v = 0;
-        for(One2OneChannelInt link :linksReceive){
-            v += link.in().read();
-        }
-        if(v+bufferStatus <= bufferSize){
-            bufferStatus += v;
-        }else{
-            otherBuffersContent += v-bufferSize;
-            bufferStatus = bufferSize;
-        }
-    }
-
-
-
-    // run
     public void run () {
 
-        int p, c;
-        p = producerChannel.in().read();
-        c = consumerChannel.in().read();
-
         boolean running = true;
-        int i = 0;
+        int i = 1000;
+        int val;
+        int ind;
+        boolean[] waitingFor = new boolean[neighboursNumber];
+        for(int j = 0; j < neighboursNumber; j++) waitingFor[j] = false;
         while(running){
             // Processing producers
-            if(bufferStatus + p <= bufferSize){
-                bufferStatus += p;
-                p = producerChannel.in().read();
 
+            ind = this.alt.fairSelect();
+
+            if(ind >= 2)System.out.println(ind);
+
+            if(ind < this.neighboursNumber ){
+                val = linksReceive.get(ind).in().read();
+                if(!waitingFor[ind]){
+                    buffersSend(ind);
+                }else waitingFor[ind] = false;
+
+                bufferStatus += val;
+                continue;
+            }else{
+                ind -= this.neighboursNumber;
             }
 
 
-            // if too much product is received from other buffers they should be processed first
-            if(otherBuffersContent > 0){
-                if(otherBuffersContent + bufferStatus <= bufferSize){
-                    bufferStatus += otherBuffersContent;
-                    otherBuffersContent = 0;
-                }else{
-                    otherBuffersContent -= (bufferSize - bufferStatus);
-                    bufferStatus = bufferSize;
+            if(ind == 0){
+                if(bufferStatus < bufferSize){
+                    val = producerChannel.in().read();
+                    bufferStatus += val;
                 }
-            // Otherwise we can process the consumers
-            }else if(bufferStatus - c >= 0){
-                bufferStatus -= c;
-                c = consumerChannel.in().read();
-
+            }else{
+                if(bufferStatus > 0) {
+                    val = consumerChannel.in().read();
+                    bufferStatus += val;
+                }
             }
 
-            // redistributing contents
-            if(i == 1000){
-                buffersSend();
-                buffersReceive();
-                buffersSend();
-                buffersReceive();
-                i = 0;
+
+            if(i % 100000 == (int)(Math.random()*1000) && (int)(Math.random()*3) == 1){
+
+                i = (int) (Math.random() * neighboursNumber);
+                waitingFor[i] = true;
+                buffersSend(i);
+                i = 1000;
+
             }else i++;
-            System.out.println(i);
+
         }
     }
 }
@@ -181,6 +165,7 @@ public final class PCMain {
 
     // PCMain constructor
     public PCMain () throws InterruptedException {
+
         // Create channel object
         Any2OneChannelInt[] producerChannels = new Any2OneChannelInt[bufferNumber];
         Any2OneChannelInt[] consumerChannels = new Any2OneChannelInt[bufferNumber];
@@ -192,14 +177,13 @@ public final class PCMain {
         }
 
         // Initialize connection list between buffers
-        ArrayList<ArrayList<One2OneChannelInt>> bufferLinksSend = new ArrayList<ArrayList<One2OneChannelInt>>();
-        ArrayList<ArrayList<One2OneChannelInt>> bufferLinksReceive = new ArrayList<ArrayList<One2OneChannelInt>>();
+        ArrayList<ArrayList<One2OneChannelInt>> bufferLinksSend = new ArrayList<>();
+        ArrayList<ArrayList<One2OneChannelInt>> bufferLinksReceive = new ArrayList<>();
         for(int i = 0; i < bufferNumber; i++){
             ArrayList<One2OneChannelInt> listSend = new ArrayList<>();
             ArrayList<One2OneChannelInt> listReceive = new ArrayList<>();
             bufferLinksSend.add(listSend);
             bufferLinksReceive.add(listReceive);
-
         }
 
         // graph of connections
@@ -212,17 +196,18 @@ public final class PCMain {
             i = link[0];
             j = link[1];
 
+            One2OneChannelInt channelA = Channel.one2oneInt();
+            One2OneChannelInt channelB = Channel.one2oneInt();
+
             list1Send = bufferLinksSend.get(i);
             list2Send = bufferLinksSend.get(j);
-            One2OneChannelInt channelSend = Channel.one2oneInt();
-            list1Send.add(channelSend);
-            list2Send.add(channelSend);
+            list1Send.add(channelA);
+            list2Send.add(channelB);
 
             list1Receive = bufferLinksReceive.get(i);
             list2Receive = bufferLinksReceive.get(j);
-            One2OneChannelInt channelReceive = Channel.one2oneInt();
-            list1Receive.add(channelReceive);
-            list2Receive.add(channelReceive);
+            list1Receive.add(channelB);
+            list2Receive.add(channelA);
         }
 
         // creating producers, consumer and buffer threads
