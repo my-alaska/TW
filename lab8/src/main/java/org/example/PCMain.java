@@ -2,19 +2,26 @@ package org.example;
 
 import org.jcsp.lang.*;
 
+import java.nio.Buffer;
 import java.util.ArrayList;
+import java.util.concurrent.TimeUnit;
 
 
 class Producer implements CSProcess{
     private Any2OneChannelInt[] channels;
     int completed;
+    boolean running;
     public Producer(Any2OneChannelInt[] producerChannels) {
         this.channels = producerChannels;
         this.completed = 0;
     }
 
+    public void stop(){
+        running = false;
+    }
+
     public void run () {
-        boolean running = true;
+        this.running = true;
         int i;
         while(running){
             // randomly chosen buffer to send to
@@ -28,14 +35,18 @@ class Producer implements CSProcess{
 class Consumer implements CSProcess {
     private Any2OneChannelInt[] channels;
     int completed;
+    boolean running;
     public Consumer(Any2OneChannelInt[] consumerChannels) {
         this.channels = consumerChannels;
         this.completed = 0;
     }
 
+    public void stop(){
+        running = false;
+    }
 
     public void run () {
-        boolean running = true;
+        running = true;
         int i;
         while(running){
             // randomly chosen buffer to receive from
@@ -67,7 +78,7 @@ class PCBuffer implements CSProcess {
     int otherBuffersContent;
     // buffer identifier
     int id;
-
+    boolean running;
 
     // constructor
     public PCBuffer(int id, Any2OneChannelInt producerChannel, Any2OneChannelInt consumerChannel, ArrayList<One2OneChannelInt> linksSend, ArrayList<One2OneChannelInt> linksReceive) {
@@ -91,6 +102,7 @@ class PCBuffer implements CSProcess {
         this.otherBuffersContent = 0;
     }
 
+
     // sending half of buffer contents to a random neighbour
     private void buffersSend(int ind){
         int valSend = bufferStatus/2;
@@ -99,9 +111,13 @@ class PCBuffer implements CSProcess {
 
     }
 
+    public void stop(){
+        this.running = false;
+    }
+
     public void run () {
 
-        boolean running = true;
+        running = true;
         int i = 1000;
         int val;
         int ind;
@@ -112,7 +128,7 @@ class PCBuffer implements CSProcess {
 
             ind = this.alt.fairSelect();
 
-            if(ind >= 2)System.out.println(ind);
+//            if(ind >= 2)System.out.println(ind);
 
             if(ind < this.neighboursNumber ){
                 val = linksReceive.get(ind).in().read();
@@ -153,11 +169,54 @@ class PCBuffer implements CSProcess {
     }
 }
 
+
+class Killer implements CSProcess {
+
+    public void run () {
+        try {
+            TimeUnit.SECONDS.sleep(5);
+        } catch (InterruptedException e) {
+            throw new RuntimeException(e);
+        }
+        for(int j = 0; j < PCMain.producerNumber; j++){
+            PCMain.producers[j].stop();
+        }
+
+        for(int j = 0; j < PCMain.consumerNumber; j++){
+            PCMain.consumers[j].stop();
+        }
+
+        for(int j = 0; j < PCMain.bufferNumber; j++) {
+            PCMain.buffers[j].stop();
+        }
+
+        System.out.println("Completed Producer Tasks");
+        for(int j = 0; j < PCMain.producerNumber; j++){
+            System.out.println(PCMain.producers[j].completed);
+        }
+
+        System.out.println("\nCompleted Consumer Tasks");
+
+        for(int j = 0; j < PCMain.consumerNumber; j++){
+            System.out.println(PCMain.consumers[j].completed);
+        }
+
+        System.out.println("\n ending buffer status");
+        for(int j = 0; j < PCMain.bufferNumber; j++) {
+            System.out.println(PCMain.buffers[j].bufferStatus);
+        }
+
+    }
+}
+
 public final class PCMain {
     public static int producerNumber = 13;
     public static int consumerNumber = 13;
-    public static int bufferSize = 100;
+    public static int bufferSize = 10000;
     public static int bufferNumber = 6;
+    public static Producer[] producers;
+    public static Consumer[] consumers;
+    public static PCBuffer[] buffers;
 
     public static void main (String[] args) throws InterruptedException {
         new PCMain();
@@ -211,22 +270,38 @@ public final class PCMain {
         }
 
         // creating producers, consumer and buffer threads
-        CSProcess[] procList = new CSProcess[producerNumber + consumerNumber + bufferNumber];
+        CSProcess[] procList = new CSProcess[producerNumber + consumerNumber + bufferNumber+1];
         i = 0;
+
+        producers = new Producer[producerNumber];
         for(j = 0; j < producerNumber; j++){
-            procList[i] = new Producer(producerChannels);
-            i++;
-        }
-        for(j = 0; j < consumerNumber; j++){
-            procList[i] = new Consumer(consumerChannels);
-            i++;
-        }
-        for(j = 0; j < bufferNumber; j++) {
-            procList[i] = new PCBuffer(j, producerChannels[j], consumerChannels[j] ,bufferLinksSend.get(j),bufferLinksReceive.get(j));
+            producers[j] = new Producer(producerChannels);
+            procList[i] = producers[j];
             i++;
         }
 
+        consumers = new Consumer[consumerNumber];
+        for(j = 0; j < consumerNumber; j++){
+            consumers[j] = new Consumer(consumerChannels);
+            procList[i] = consumers[j];
+            i++;
+        }
+
+        buffers = new PCBuffer[bufferNumber];
+        for(j = 0; j < bufferNumber; j++) {
+            buffers[j] = new PCBuffer(j, producerChannels[j], consumerChannels[j] ,bufferLinksSend.get(j),bufferLinksReceive.get(j));
+            procList[i] = buffers[j];
+            i++;
+        }
+
+        procList[producerNumber + consumerNumber + bufferNumber] = new Killer();
+
         Parallel par = new Parallel(procList); // PAR construct
         par.run(); // Execute processes in parallel
+
+
+
+
+
     }
 }
